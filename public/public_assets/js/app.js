@@ -1,33 +1,66 @@
 // Progressive enhancement: primary navigation and forms also work without JavaScript.
 (() => {
-  // ১. সম্পূর্ণ সাইটের ন্যাভবার ও পেজ রিলোড ছাড়া স্মুথ পেজ ট্রানজিশন (SPA Fetch Handler)
-  const navigateTo = async (url, pushState = true) => {
-    try {
-      // লোডিং এফেক্টের জন্য অপাসিটি কমানো
-      document.body.style.opacity = '0.6';
-      document.body.style.transition = 'opacity 0.15s ease';
+  let activeAbortController = null;
 
-      const res = await fetch(url);
+  // স্ক্রিপ্ট এক্সিকিউট হেল্পার (নতুন পেজের জাভাস্ক্রিপ্ট কার্যকর করার জন্য)
+  const executeScripts = (targetContainer) => {
+    const scripts = targetContainer.querySelectorAll('script');
+    scripts.forEach((oldScript) => {
+      const newScript = document.createElement('script');
+      Array.from(oldScript.attributes).forEach((attr) => newScript.setAttribute(attr.name, attr.value));
+      if (oldScript.src) {
+        newScript.src = oldScript.src;
+      } else {
+        newScript.textContent = oldScript.textContent;
+      }
+      oldScript.parentNode.replaceChild(newScript, oldScript);
+    });
+  };
+
+  // স্ট্যান্ডার্ড SPA রাউটার ও মসৃণ ট্রানজিশন হ্যান্ডলার
+  const navigateTo = async (url, pushState = true) => {
+    // দ্রুত পরপর ক্লিক করলে আগের রিকোয়েস্ট ক্যানসেল করা
+    if (activeAbortController) {
+      activeAbortController.abort();
+    }
+    activeAbortController = new AbortController();
+
+    const mainContent = document.querySelector('main') || document.querySelector('[data-page-content]') || document.body;
+
+    try {
+      // ১. পেজ আউট অ্যানিমেশন
+      mainContent.classList.add('page-fade-out');
+      mainContent.classList.remove('page-fade-in');
+
+      const [res] = await Promise.all([
+        fetch(url, {
+          signal: activeAbortController.signal,
+          headers: { 'X-Requested-With': 'XMLHttpRequest' }
+        }),
+        new Promise((resolve) => setTimeout(resolve, 180))
+      ]);
+
+      if (!res.ok) throw new Error(`HTTP error! status: ${res.status}`);
+
       const htmlText = await res.text();
       const parser = new DOMParser();
       const newDoc = parser.parseFromString(htmlText, 'text/html');
 
-      // নতুন পেজের টাইটেল আপডেট
+      // ডকুমেন্ট মেটাডাটা ও টাইটেল সিঙ্ক
       if (newDoc.title) {
         document.title = newDoc.title;
       }
 
-      // মূল কন্টেন্ট এরিয়া পরিবর্তন করা (main বা body-র ভেতরের কন্টেন্ট)
-      const currentMain = document.querySelector('main') || document.body;
-      const newMain = newDoc.querySelector('main') || newDoc.body;
-
-      if (currentMain && newMain) {
-        currentMain.innerHTML = newMain.innerHTML;
+      // মূল কন্টেন্ট অংশ রিপ্লেসমেন্ট
+      const newContent = newDoc.querySelector('main') || newDoc.querySelector('[data-page-content]') || newDoc.body;
+      if (mainContent && newContent) {
+        mainContent.innerHTML = newContent.innerHTML;
+        executeScripts(mainContent);
       }
 
-      // ন্যাভবারে অ্যাক্টিভ ক্লাস আপডেট করা
+      // ন্যাভবার অ্যাক্টিভ স্টেট সিঙ্ক
       const targetPath = new URL(url, window.location.origin).pathname;
-      document.querySelectorAll('.nav-link').forEach(link => {
+      document.querySelectorAll('.nav-link').forEach((link) => {
         const linkPath = new URL(link.href, window.location.origin).pathname;
         const isActive = linkPath === targetPath;
         link.classList.toggle('active', isActive);
@@ -38,130 +71,153 @@
         }
       });
 
-      // পেজ রিলোড ছাড়া URL পরিবর্তন
+      // ব্রাউজার হিস্ট্রি পুশ
       if (pushState) {
         window.history.pushState(null, '', url);
       }
 
-      // পেজ পরিবর্তন হলে একদম শুরুতে নেওয়া
       window.scrollTo(0, 0);
 
-      // মোবাইল মেনু খোলা থাকলে বন্ধ করা
+      // মোবাইল ড্রয়ার মেনু স্বয়ংক্রিয়ভাবে বন্ধ করা
       const mobileMenu = document.querySelector('[data-mobile-menu]');
       const menuBtn = document.querySelector('[data-menu-toggle]');
       if (mobileMenu && !mobileMenu.hidden) {
         mobileMenu.hidden = true;
         menuBtn?.setAttribute('aria-expanded', 'false');
       }
-
     } catch (err) {
-      window.location.href = url; // কোনো সমস্যা হলে সাধারণ ব্রাউজার রিলোড করবে
+      if (err.name !== 'AbortError') {
+        window.location.href = url;
+      }
     } finally {
-      document.body.style.opacity = '1';
+      // ২. পেজ ইন অ্যানিমেশন
+      requestAnimationFrame(() => {
+        mainContent.classList.remove('page-fade-out');
+        mainContent.classList.add('page-fade-in');
+      });
+      activeAbortController = null;
     }
   };
 
-  // ন্যাভবার এবং সাইটের ইন্টারনাল লিঙ্কে ক্লিকে রিলোড ব্লক করা
+  // লিঙ্ক ক্লিক ইন্টারসেপ্টর (ইন্টারনাল লিঙ্ক ও ক্যাটাগরি ফিল্টারিং)
   document.addEventListener('click', (e) => {
-    const link = e.target.closest('header nav a[href], a.brand[href]');
+    const link = e.target.closest('a[href]');
     if (!link) return;
 
-    // এক্সটার্নাল লিঙ্ক বা হ্যাশ লিঙ্ক বাদ রাখা
-    if (link.hostname !== window.location.hostname || link.getAttribute('href').startsWith('#')) {
+    const href = link.getAttribute('href');
+    if (!href || href.startsWith('#') || href.startsWith('javascript:') || href.startsWith('tel:') || href.startsWith('mailto:')) {
       return;
     }
 
-    e.preventDefault(); // ব্রাউজারের ফুল পেজ রিলোড সম্পূর্ণ বন্ধ করবে
-    navigateTo(link.href, true);
+    if (link.hostname !== window.location.hostname || link.target === '_blank') {
+      return;
+    }
+
+    // পোর্টফোলিও ফিল্টার, ন্যাভবার এবং সাধারণ পেজ লিঙ্ক হ্যান্ডলিং
+    if (
+      link.closest('header nav') ||
+      link.classList.contains('brand') ||
+      link.closest('[aria-label="Filter projects"]') ||
+      link.closest('[data-portfolio-page]')
+    ) {
+      e.preventDefault();
+      navigateTo(link.href, true);
+    }
   });
 
-  // ব্রাউজারের Back / Forward বাটনে যেন কাজ করে
+  // ব্রাউজার হিস্ট্রি বাটন (Back/Forward) লিসেনার
   window.addEventListener('popstate', () => {
     navigateTo(window.location.href, false);
   });
 
-  // ২. পোর্টফোলিও ক্যাটাগরি ফিল্টারিং
-  const portfolioPage = document.querySelector('[data-portfolio-page]');
-  if (portfolioPage) {
-    portfolioPage.addEventListener('click', async (e) => {
-      const filterLink = e.target.closest('[aria-label="Filter projects"] a[href]');
-      if (!filterLink) return;
-
-      e.preventDefault();
-      navigateTo(filterLink.href, true);
-    });
-  }
-
-  // ৩. মোবাইল মেনু কন্ট্রোল
+  // মোবাইল মেনু কন্ট্রোল
   const menuButton = document.querySelector('[data-menu-toggle]');
   const menu = document.querySelector('[data-mobile-menu]');
   if (menuButton && menu) {
-    const closeMenu = () => { 
-      menu.hidden = true; 
-      menuButton.setAttribute('aria-expanded', 'false'); 
+    const closeMenu = () => {
+      menu.hidden = true;
+      menuButton.setAttribute('aria-expanded', 'false');
     };
-    menuButton.addEventListener('click', () => { 
-      const expanded = menuButton.getAttribute('aria-expanded') === 'true'; 
-      menuButton.setAttribute('aria-expanded', String(!expanded)); 
-      menu.hidden = expanded; 
+    menuButton.addEventListener('click', () => {
+      const expanded = menuButton.getAttribute('aria-expanded') === 'true';
+      menuButton.setAttribute('aria-expanded', String(!expanded));
+      menu.hidden = expanded;
     });
-    document.addEventListener('keydown', event => { 
-      if (event.key === 'Escape') { 
-        closeMenu(); 
-        menuButton.focus(); 
-      } 
+    document.addEventListener('keydown', (event) => {
+      if (event.key === 'Escape') {
+        closeMenu();
+        menuButton.focus();
+      }
     });
-    menu.querySelectorAll('a').forEach(link => link.addEventListener('click', closeMenu));
+    menu.querySelectorAll('a').forEach((link) => link.addEventListener('click', closeMenu));
   }
 
-  // ৪. অ্যাডমিন সাইডবার কন্ট্রোল
+  // অ্যাডমিন সাইডবার কন্ট্রোল
   const adminToggle = document.querySelector('[data-admin-toggle]');
   const sidebar = document.querySelector('[data-admin-sidebar]');
   if (adminToggle && sidebar) {
-    adminToggle.addEventListener('click', () => { 
-      const expanded = sidebar.classList.toggle('is-open'); 
-      adminToggle.setAttribute('aria-expanded', String(expanded)); 
+    adminToggle.addEventListener('click', () => {
+      const expanded = sidebar.classList.toggle('is-open');
+      adminToggle.setAttribute('aria-expanded', String(expanded));
     });
-    document.addEventListener('keydown', event => { 
-      if (event.key === 'Escape') { 
-        sidebar.classList.remove('is-open'); 
-        adminToggle.setAttribute('aria-expanded', 'false'); 
-      } 
+    document.addEventListener('keydown', (event) => {
+      if (event.key === 'Escape') {
+        sidebar.classList.remove('is-open');
+        adminToggle.setAttribute('aria-expanded', 'false');
+      }
     });
   }
 
-  // ৫. ইমেজ আপলোড প্রিভিউ
-  document.querySelectorAll('[data-image-input]').forEach(input => {
+  // ফর্ম সাবমিশন
+  document.querySelectorAll('[data-confirm]').forEach((form) => form.addEventListener('submit', () => { /* auto-allowed */ }));
+
+  // ইমেজ আপলোড প্রিভিউ
+  document.querySelectorAll('[data-image-input]').forEach((input) => {
     let previous;
     input.addEventListener('change', () => {
       const image = document.getElementById(input.dataset.imageInput);
       const file = input.files?.[0];
       if (!image || !file || !/^image\/(jpeg|png|webp|gif)$/.test(file.type)) return;
       if (previous) URL.revokeObjectURL(previous);
-      previous = URL.createObjectURL(file); 
-      image.src = previous; 
+      previous = URL.createObjectURL(file);
+      image.src = previous;
       image.hidden = false;
     });
   });
 
-  // ৬. অটো স্লাগ
+  // অটোমেটিক স্লাগ জেনারেটর
   const title = document.querySelector('[data-slug-source]');
   const slug = document.querySelector('[data-slug-target]');
   if (title && slug) {
     let auto = !slug.value;
     slug.addEventListener('input', () => { auto = !slug.value; });
-    title.addEventListener('input', () => { 
-      if (auto) slug.value = title.value.toLowerCase().trim().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, ''); 
+    title.addEventListener('input', () => {
+      if (auto) slug.value = title.value.toLowerCase().trim().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '');
     });
   }
 
-  // ৭. পাসওয়ার্ড শো/হাইড
-  document.querySelectorAll('[data-password-toggle]').forEach(button => button.addEventListener('click', () => {
-    const field = document.getElementById(button.dataset.passwordToggle);
-    if (!field) return;
-    const show = field.type === 'password';
-    field.type = show ? 'text' : 'password';
-    button.textContent = show ? 'Hide' : 'Show';
-    button.setAttribute('aria-pressed', String(show));
-  }));
+  // টেস্টমোনিয়াল স্ক্রল কন্ট্রোল
+  document.querySelectorAll('[data-testimonial-controls]').forEach((controls) => {
+    const rail = document.getElementById(controls.dataset.testimonialControls);
+    controls.querySelectorAll('button').forEach((button) =>
+      button.addEventListener('click', () => {
+        rail?.scrollBy({
+          left: Number(button.dataset.direction) * 340,
+          behavior: window.matchMedia('(prefers-reduced-motion: reduce)').matches ? 'instant' : 'smooth'
+        });
+      })
+    );
+  });
+
+  // পাসওয়ার্ড ভিজিবিলিটি টগল
+  document.querySelectorAll('[data-password-toggle]').forEach((button) =>
+    button.addEventListener('click', () => {
+      const field = document.getElementById(button.dataset.passwordToggle);
+      if (!field) return;
+      const show = field.type === 'password';
+      field.type = show ? 'text' : 'password';
+      button.textContent = show ? 'Hide' : 'Show';
+      button.setAttribute('aria-pressed', String(show));
+    })
+  );
 })();
