@@ -1,0 +1,3 @@
+<section class="page-intro"><div class="container-page"><p class="eyebrow">Services</p><h1>The right ideas.<br><span class="text-brand-500">The right kind of growth.</span></h1><p class="text-muted mt-6 max-w-xl text-lg">From being discovered to being remembered, we help your brand show up with purpose.</p></div></section>
+<section class="container-page section-space"><div class="grid sm:grid-cols-2 lg:grid-cols-4 gap-6"><?php foreach($services as $service) view('services/card',['service'=>$service]); ?></div><?php if(!$services): ?><p class="text-muted">Our services are being updated. Contact us to discuss your project.</p><?php endif ?></section>
+<?php view('home/process'); ?><div class="h-16"></div>

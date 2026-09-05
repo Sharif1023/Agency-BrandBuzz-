@@ -1,0 +1,9 @@
+.env
+/node_modules/
+/storage/*
+!/storage/.htaccess
+!/storage/.gitkeep
+/public_assets/uploads/*
+!/public_assets/uploads/.htaccess
+!/public_assets/uploads/.gitkeep
+/public_assets/build/

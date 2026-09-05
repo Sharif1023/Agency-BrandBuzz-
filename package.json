@@ -1,0 +1,20 @@
+{
+  "name": "brandbuzz-agency",
+  "version": "1.0.0",
+  "private": true,
+  "description": "PHP agency CMS with precompiled Tailwind CSS",
+  "type": "module",
+  "scripts": {
+    "build": "tailwindcss -i resources/css/app.css -o public_assets/css/tailwind.css --minify",
+    "dev": "tailwindcss -i resources/css/app.css -o public_assets/css/tailwind.css --watch",
+    "build:vite": "vite build",
+    "check:js": "node --check public_assets/js/app.js"
+  },
+  "devDependencies": {
+    "@fontsource-variable/inter": "^5.3.0",
+    "autoprefixer": "^10.4.21",
+    "postcss": "^8.5.6",
+    "tailwindcss": "^3.4.17",
+    "vite": "^6.4.1"
+  }
+}

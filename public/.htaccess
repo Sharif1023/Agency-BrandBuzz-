@@ -1,0 +1,21 @@
+Options -Indexes
+DirectoryIndex index.php
+
+<IfModule mod_rewrite.c>
+RewriteEngine On
+
+# 1. Block sensitive files
+RewriteRule (^|/)\. - [F,L]
+
+# 2. Serve real files and directories directly (e.g. public_assets/ or assets/)
+RewriteCond %{REQUEST_FILENAME} -f [OR]
+RewriteCond %{REQUEST_FILENAME} -d
+RewriteRule ^ - [L]
+
+# 3. Rewrite all clean URLs to index.php
+RewriteRule ^ index.php [L,QSA]
+</IfModule>
+
+<FilesMatch "(?i)^(\..*|.*\.(sql|log|env|bak|ini|lock|md))$">
+Require all denied
+</FilesMatch>

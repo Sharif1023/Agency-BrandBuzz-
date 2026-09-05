@@ -1,0 +1,50 @@
+Options -Indexes
+DirectoryIndex index.php
+
+<IfModule mod_rewrite.c>
+RewriteEngine On
+
+# 1. Block sensitive directories and files
+RewriteRule ^(?:app|resources|database|storage|tests|tools|node_modules|\.git|\.openai)(?:/|$) - [F,L,NC]
+RewriteRule (^|/)\. - [F,L]
+RewriteRule ^(?:package(?:-lock)?\.json|tailwind\.config\.js|vite\.config\.js|postcss\.config\.js|router\.php|README.*|SETUP.*|TESTING.*)$ - [F,L,NC]
+
+# 2. 301 Redirect legacy /public/ routes and direct .php files
+RewriteCond %{THE_REQUEST} \s/+public/index\.php[?\s] [NC]
+RewriteRule ^public/index\.php$ / [R=301,L]
+
+RewriteCond %{THE_REQUEST} \s/+public/([a-zA-Z0-9_\-]+)\.php[?\s] [NC]
+RewriteRule ^public/([a-zA-Z0-9_\-]+)\.php$ /$1 [R=301,L]
+
+RewriteCond %{THE_REQUEST} \s/+([a-zA-Z0-9_\-]+)\.php[?\s] [NC]
+RewriteRule ^(about|services|portfolio|blog|contact)\.php$ /$1 [R=301,L]
+
+# 3. Serve real files and directories directly
+RewriteCond %{REQUEST_FILENAME} -f [OR]
+RewriteCond %{REQUEST_FILENAME} -d
+RewriteRule ^ - [L]
+
+# 4. Map /assets/ to public_assets/
+RewriteRule ^assets/(.*)$ public_assets/$1 [L,NC]
+
+# 5. Clean public routes
+RewriteRule ^home/?$ index.php [L,QSA]
+RewriteRule ^about/?$ public/about.php [L,QSA]
+RewriteRule ^contact/?$ public/contact.php [L,QSA]
+RewriteRule ^services/([a-zA-Z0-9_\-]+)/?$ public/services.php?slug=$1 [L,QSA]
+RewriteRule ^services/?$ public/services.php [L,QSA]
+RewriteRule ^portfolio/([a-zA-Z0-9_\-]+)/?$ public/portfolio.php?slug=$1 [L,QSA]
+RewriteRule ^portfolio/?$ public/portfolio.php [L,QSA]
+RewriteRule ^blog/([a-zA-Z0-9_\-]+)/?$ public/blog.php?slug=$1 [L,QSA]
+RewriteRule ^blog/?$ public/blog.php [L,QSA]
+RewriteRule ^install/?$ install.php [L,QSA]
+
+# 6. Admin clean URLs without .php extension
+RewriteCond %{DOCUMENT_ROOT}/admin/$1.php -f [OR]
+RewriteCond %{REQUEST_FILENAME}.php -f
+RewriteRule ^admin/([a-zA-Z0-9_/-]+)/?$ admin/$1.php [L,QSA]
+</IfModule>
+
+<FilesMatch "(?i)^(\..*|.*\.(sql|log|env|bak|ini|lock|md))$">
+Require all denied
+</FilesMatch>
